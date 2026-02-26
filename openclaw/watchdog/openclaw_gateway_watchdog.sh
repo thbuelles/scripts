@@ -56,19 +56,42 @@ if [[ -n "${log_file:-}" ]]; then
   [[ -z "$err_tail" ]] && err_tail="(log tail had only structured JSON lines)"
 fi
 
+incident_id=$(date +%s)
+
 restart_out=$($OPENCLAW_BIN gateway restart 2>&1 | strip_ansi)
 restart_rc=$?
 restart_summary=$(echo "$restart_out" | grep -E 'Service:|Runtime:|RPC probe:|Listening:|Gateway:' | head -n 6)
 [[ -z "$restart_summary" ]] && restart_summary="(no concise restart lines found)"
 
-msg="[openclaw watchdog] gateway unhealthy at $now_human\nrestart_rc=$restart_rc\nstatus_summary:\n$status_summary\nrestart_summary:\n$restart_summary\nlog_tail:\n$err_tail"
+# Wait for recovery (up to ~30s)
+recovered=0
+for _ in {1..10}; do
+  sleep 3
+  probe_out=$($OPENCLAW_BIN gateway status 2>&1 | strip_ansi)
+  if echo "$probe_out" | grep -qiE 'RPC probe: ok|Listening: 127\.0\.0\.1:18789|Listening:'; then
+    recovered=1
+    break
+  fi
+done
+
+crash_msg="[openclaw watchdog][$incident_id] crash detected at $now_human\nstatus_summary:\n$status_summary\nlog_tail:\n$err_tail"
+recover_msg="[openclaw watchdog][$incident_id] restart attempted (rc=$restart_rc), recovered=$recovered\nrestart_summary:\n$restart_summary"
 
 {
   echo "===== $now_human ====="
-  echo "$msg"
+  echo "$crash_msg"
+  echo "$recover_msg"
   echo
 } >> "$EVENT_LOG"
 
 if [[ -n "$WHATSAPP_TARGET" ]]; then
-  $OPENCLAW_BIN message send --channel whatsapp --target "$WHATSAPP_TARGET" --message "$msg" >/dev/null 2>&1 || true
+  # Send crash + recovery notifications with retry after gateway comes back
+  for _ in {1..5}; do
+    $OPENCLAW_BIN message send --channel whatsapp --target "$WHATSAPP_TARGET" --message "$crash_msg" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  for _ in {1..5}; do
+    $OPENCLAW_BIN message send --channel whatsapp --target "$WHATSAPP_TARGET" --message "$recover_msg" >/dev/null 2>&1 && break
+    sleep 2
+  done
 fi
