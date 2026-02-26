@@ -16,11 +16,15 @@ WHATSAPP_TARGET="${WHATSAPP_TARGET:-}"
 now_epoch=$(date +%s)
 now_human=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
-status_out=$($OPENCLAW_BIN gateway status 2>&1)
+strip_ansi() {
+  sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+}
+
+status_out=$($OPENCLAW_BIN gateway status 2>&1 | strip_ansi)
 status_rc=$?
 
 is_healthy=0
-if [[ $status_rc -eq 0 ]] && echo "$status_out" | grep -qiE 'RPC probe: ok|Gateway:.*reachable|Listening:'; then
+if [[ $status_rc -eq 0 ]] && echo "$status_out" | grep -qiE 'RPC probe: ok|Listening: 127\.0\.0\.1:18789|Listening:'; then
   is_healthy=1
 fi
 
@@ -40,16 +44,24 @@ fi
 
 echo "$now_epoch" > "$LAST_ALERT_FILE"
 
+status_summary=$(echo "$status_out" | grep -E 'Service:|Runtime:|RPC probe:|Listening:|Dashboard:' | head -n 6)
+if [[ -z "$status_summary" ]]; then
+  status_summary="(no concise status lines found)"
+fi
+
 log_file=$(ls -t /tmp/openclaw/openclaw-*.log 2>/dev/null | head -n 1)
 err_tail="(no openclaw log file found)"
 if [[ -n "${log_file:-}" ]]; then
-  err_tail=$(tail -n 80 "$log_file" | tail -n 25)
+  err_tail=$(tail -n 120 "$log_file" | grep -v '^{' | tail -n 20)
+  [[ -z "$err_tail" ]] && err_tail="(log tail had only structured JSON lines)"
 fi
 
-restart_out=$($OPENCLAW_BIN gateway restart 2>&1)
+restart_out=$($OPENCLAW_BIN gateway restart 2>&1 | strip_ansi)
 restart_rc=$?
+restart_summary=$(echo "$restart_out" | grep -E 'Service:|Runtime:|RPC probe:|Listening:|Gateway:' | head -n 6)
+[[ -z "$restart_summary" ]] && restart_summary="(no concise restart lines found)"
 
-msg="[openclaw watchdog] gateway unhealthy at $now_human. restart_rc=$restart_rc\nstatus: $(echo "$status_out" | tr '\n' ' ' | cut -c1-280)\nrestart: $(echo "$restart_out" | tr '\n' ' ' | cut -c1-280)\nlog_tail:\n$err_tail"
+msg="[openclaw watchdog] gateway unhealthy at $now_human\nrestart_rc=$restart_rc\nstatus_summary:\n$status_summary\nrestart_summary:\n$restart_summary\nlog_tail:\n$err_tail"
 
 {
   echo "===== $now_human ====="
