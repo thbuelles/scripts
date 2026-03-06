@@ -13,7 +13,8 @@ chmod +x "$SCRIPT_DST"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   cat > "$ENV_FILE" <<EOF
-WHATSAPP_TARGET=+1XXXXXXXXXX
+NOTIFY_CHANNEL=webchat
+NOTIFY_TARGET=gateway-client
 EOF
   chmod 600 "$ENV_FILE"
 fi

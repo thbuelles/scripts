@@ -11,7 +11,8 @@ ENV_FILE="/Users/bici/.openclaw/workspace/.secrets/openclaw-watchdog.env"
 mkdir -p "$LOG_DIR"
 
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
-WHATSAPP_TARGET="${WHATSAPP_TARGET:-}"
+NOTIFY_CHANNEL="${NOTIFY_CHANNEL:-webchat}"
+NOTIFY_TARGET="${NOTIFY_TARGET:-gateway-client}"
 
 now_epoch=$(date +%s)
 now_human=$(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -84,14 +85,14 @@ recover_msg="[openclaw watchdog][$incident_id] restart attempted (rc=$restart_rc
   echo
 } >> "$EVENT_LOG"
 
-if [[ -n "$WHATSAPP_TARGET" ]]; then
+if [[ -n "$NOTIFY_TARGET" ]]; then
   # Send crash + recovery notifications with retry after gateway comes back
   for _ in {1..5}; do
-    $OPENCLAW_BIN message send --channel whatsapp --target "$WHATSAPP_TARGET" --message "$crash_msg" >/dev/null 2>&1 && break
+    $OPENCLAW_BIN message send --channel "$NOTIFY_CHANNEL" --target "$NOTIFY_TARGET" --message "$crash_msg" >/dev/null 2>&1 && break
     sleep 2
   done
   for _ in {1..5}; do
-    $OPENCLAW_BIN message send --channel whatsapp --target "$WHATSAPP_TARGET" --message "$recover_msg" >/dev/null 2>&1 && break
+    $OPENCLAW_BIN message send --channel "$NOTIFY_CHANNEL" --target "$NOTIFY_TARGET" --message "$recover_msg" >/dev/null 2>&1 && break
     sleep 2
   done
 fi
